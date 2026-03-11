@@ -81,58 +81,58 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: Add server to known_hosts
-        if: runner.os != 'Windows'
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
-    
-      - name: Upload build to server (Linux/OSX)
-        if: runner.os != 'Windows'
-        run: |
-          rsync -avz \
-            --include="*/" \
-            --include="*.zip" \
-            --include="packages/*.nw" \
-            --include="packages/version" \
-            --exclude="*" \
-            source/packages/client/bin/ \
-            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/var/www/latest_tmp/
-            
-      - name: Upload build to server (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $files = Get-ChildItem -Path source\packages\client\bin -Recurse | Where-Object {
-            $_.Extension -eq '.zip' -or
-            $_.FullName -match '\\packages\\.*\.nw$' -or
-            $_.FullName -match '\\packages\\version$'
-          }
-          foreach ($file in $files) {
-            scp -o StrictHostKeyChecking=no $file.FullName ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/var/www/latest_tmp/
-          }
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.os }}
+          path: |
+            source/packages/client/bin/*.zip
+            source/packages/client/bin/packages/*.nw
+            source/packages/client/bin/packages/version
           
   deploy:
     needs: build
     runs-on: ubuntu-latest
-  
+
     steps:
+      - name: Checkout
+        run: echo "Ready to deploy"
+
+      # Скачать артефакты всех OS
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-windows
+          path: ./build/windows
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-ubuntu-latest
+          path: ./build/linux
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-macos-latest
+          path: ./build/macos
+
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-          
+
       - name: Add server to known_hosts
         run: |
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
-          
-      - name: Activate release
+
+      - name: Deploy all artifacts to server
         run: |
+          rsync -avz ./build/ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/var/www/latest_tmp/
           ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
             set -e
             cd /var/www
-  
             rm -rf latest || true
             mv latest_tmp latest || true
           EOF
