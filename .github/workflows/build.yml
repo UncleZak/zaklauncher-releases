@@ -23,30 +23,45 @@ permissions:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
-
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     strategy:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
 
     steps:
       - name: Checkout GitLab repo
-        run: |
-          git clone https://oauth2:${{ secrets.GH_ZL_TOKEN }}@gitlab.com/zaklauncher/launcher.git source
-          cd source
+        run: git clone https://oauth2:${{ secrets.GH_ZL_TOKEN }}@gitlab.com/zaklauncher/launcher.git source
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 22
-          
+          node-version: 24
+
       - uses: pnpm/action-setup@v2
         with:
           version: 9
-        
+
+      - name: Cache pnpm store
+        uses: actions/cache@v3
+        with:
+          path: ~/.pnpm-store
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('source/packages/client/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-
+
+      - name: Cache client cache
+        uses: actions/cache@v3
+        with:
+          path: source/packages/client/cache
+          key: client-cache-${{ runner.os }}-${{ hashFiles('source/packages/client/pnpm-lock.yaml') }}
+          restore-keys: |
+            client-cache-${{ runner.os }}-
+
       - name: Install dependencies (without postinstall)
         run: |
           cd source
-          pnpm install --ignore-scripts
+          pnpm install --ignore-scripts --store ~/.pnpm-store
 
       - name: Build client
         run: |
@@ -58,10 +73,12 @@ jobs:
           VITE_CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
           VITE_API_URL: ${{ secrets.API_URL }}
           VITE_CHAT_SERVICE_URL: ${{ secrets.CHAT_SERVICE_URL }}
+
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}    
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
       - name: Upload build to server
         run: |
           rsync -avz \
@@ -72,15 +89,7 @@ jobs:
             --exclude="*" \
             source/packages/client/bin/ \
             ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/var/www/latest_tmp/
-          
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-${{ matrix.os }}
-          path: |
-            source/packages/client/bin/*.zip
-            source/packages/client/bin/packages/*.nw
-            source/packages/client/bin/packages/version
+
   deploy:
     needs: build
     runs-on: ubuntu-latest
