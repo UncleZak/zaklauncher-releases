@@ -28,7 +28,8 @@ jobs:
       NODE_NO_WARNINGS: 1
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        # os: [macos-latest, ubuntu-latest, windows-latest]
+        os: [windows-latest]
 
     steps:
       - name: Checkout GitLab repo
@@ -102,8 +103,15 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          rsync -avz -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" --include="*/" --include="*.zip" --include="packages/*.nw" --include="packages/version" --exclude="*" source/packages/client/bin/ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/var/www/latest_tmp/
-
+          $files = Get-ChildItem -Path source\packages\client\bin -Recurse | Where-Object {
+            $_.Extension -eq '.zip' -or
+            $_.FullName -match '\\packages\\.*\.nw$' -or
+            $_.FullName -match '\\packages\\version$'
+          }
+          foreach ($file in $files) {
+            scp -o StrictHostKeyChecking=no $file.FullName ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/var/www/latest_tmp/
+          }
+          
   deploy:
     needs: build
     runs-on: ubuntu-latest
