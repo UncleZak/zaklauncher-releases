@@ -58,6 +58,20 @@ jobs:
           VITE_CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
           VITE_API_URL: ${{ secrets.API_URL }}
           VITE_CHAT_SERVICE_URL: ${{ secrets.CHAT_SERVICE_URL }}
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}    
+      - name: Upload build to server
+        run: |
+          rsync -avz \
+            --include="*/" \
+            --include="*.zip" \
+            --include="packages/*.nw" \
+            --include="packages/version" \
+            --exclude="*" \
+            source/packages/client/bin/ \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/var/www/latest_tmp/
           
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -67,23 +81,22 @@ jobs:
             source/packages/client/bin/*.zip
             source/packages/client/bin/packages/*.nw
             source/packages/client/bin/packages/version
-  release:
+  deploy:
     needs: build
     runs-on: ubuntu-latest
-
+  
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
         with:
-          path: artifacts
-
-      - name: Show files
-        run: ls -R artifacts
-
-      - name: Create Draft Release
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          files: artifacts/**/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+  
+      - name: Activate release
+        run: |
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+            set -e
+            cd /var/www
+  
+            rm -rf latest || true
+            mv latest_tmp latest || true
+          EOF
