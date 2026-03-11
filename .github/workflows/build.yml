@@ -97,7 +97,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-windows-latest
-          path: ./build/windows
+          path: ./build/win
 
       - name: Download Linux artifacts
         uses: actions/download-artifact@v4
@@ -109,7 +109,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-macos-latest
-          path: ./build/macos
+          path: ./build/osx
 
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
