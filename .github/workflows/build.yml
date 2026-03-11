@@ -86,7 +86,7 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
     
-      - name: Upload build to server Linux/OSX
+      - name: Upload build to server (Linux/OSX)
         if: runner.os != 'Windows'
         run: |
           rsync -avz \
@@ -98,17 +98,11 @@ jobs:
             source/packages/client/bin/ \
             ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/var/www/latest_tmp/
             
-      - name: Upload build to server Windows
+      - name: Upload build to server (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          rsync -avz -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
-            --include="*/" \
-            --include="*.zip" \
-            --include="packages/*.nw" \
-            --include="packages/version" \
-            --exclude="*" \
-            source/packages/client/bin/ \
-            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/var/www/latest_tmp/
+          rsync -avz -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" --include="*/" --include="*.zip" --include="packages/*.nw" --include="packages/version" --exclude="*" source/packages/client/bin/ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/var/www/latest_tmp/
 
   deploy:
     needs: build
