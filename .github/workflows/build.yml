@@ -79,14 +79,6 @@ jobs:
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-          
-      - name: Add server to known_hosts
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $sshDir = "$env:USERPROFILE\.ssh"
-          if (-not (Test-Path $sshDir)) { New-Item -ItemType Directory -Path $sshDir | Out-Null }
-          ssh-keyscan -H ${{ secrets.SSH_HOST }} | Out-File -Encoding ascii "$sshDir\known_hosts"
 
       - name: Add server to known_hosts
         if: runner.os != 'Windows'
@@ -94,9 +86,22 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
     
-      - name: Upload build to server
+      - name: Upload build to server Linux/OSX
+        if: runner.os != 'Windows'
         run: |
           rsync -avz \
+            --include="*/" \
+            --include="*.zip" \
+            --include="packages/*.nw" \
+            --include="packages/version" \
+            --exclude="*" \
+            source/packages/client/bin/ \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/var/www/latest_tmp/
+            
+      - name: Upload build to server Windows
+        if: runner.os == 'Windows'
+        run: |
+          rsync -avz -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
             --include="*/" \
             --include="*.zip" \
             --include="packages/*.nw" \
