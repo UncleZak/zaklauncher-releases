@@ -28,21 +28,61 @@ jobs:
         os: [macos-latest, ubuntu-latest, windows-latest]
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-        with:
-          repository: UncleZak/zaklauncher-app
-          token: ${{ secrets.CROSS_REPO_TOKEN }}
+      - name: Checkout GitLab repo
+        run: |
+          git clone https://oauth2:${{ secrets.GH_ZL_TOKEN }}@gitlab.com/zaklauncher/launcher.git source
+          cd source
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 18
+          node-version: 20
+          
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 9
+        
+      - name: Install dependencies (without postinstall)
+        run: |
+          cd source
+          pnpm install --ignore-scripts
 
-      - name: Install Dependencies
-        run: npm install
-
-      - name: Build Release Files
-        run: npm run deploy
+      - name: Build client
+        run: |
+          cd source
+          pnpm --filter ./packages/client build
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VITE_CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
+          VITE_CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          VITE_CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
+          VITE_API_URL: ${{ secrets.API_URL }}
+          VITE_CHAT_SERVICE_URL: ${{ secrets.CHAT_SERVICE_URL }}
+          
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.os }}
+          path: |
+            source/packages/client/bin/*.zip
+            source/packages/client/bin/packages/*.nw
+            source/packages/client/bin/packages/version
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Show files
+        run: ls -R artifacts
+
+      - name: Create Draft Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
