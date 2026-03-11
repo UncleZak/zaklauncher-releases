@@ -76,11 +76,6 @@ jobs:
           VITE_API_URL: ${{ secrets.API_URL }}
           VITE_CHAT_SERVICE_URL: ${{ secrets.CHAT_SERVICE_URL }}
 
-      - name: Setup SSH
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -102,7 +97,7 @@ jobs:
       - name: Download Windows artifacts
         uses: actions/download-artifact@v4
         with:
-          name: build-windows
+          name: build-windows-latest
           path: ./build/windows
 
       - name: Download Linux artifacts
