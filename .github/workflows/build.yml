@@ -63,7 +63,10 @@ jobs:
         run: |
           cd source
           pnpm install --ignore-scripts --store ~/.pnpm-store
-
+      - name: Install dependncies for package
+        run: |
+          cd source/packages/client/public
+          npm install
       - name: Build client
         run: |
           cd source
