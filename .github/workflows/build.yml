@@ -84,16 +84,16 @@ jobs:
           cd source
           node ./packages/client/generate-wix-files.mjs
 
-      - name: Build MSI installer (WiX)
-        uses: utilitywarehouse/ghaction-wix@v1
-        with:
-          name: ZakLauncher
-          sourceFiles: source/packages/client/wix/product.wxs,source/packages/client/wix/files.wxs
-          outputDir: source/packages/client/bin
-          architecture: x64
-          extensions: WixUtilExtension
-          candleExtraArguments: |
-            -dSourceDir=source/packages/client/bin/win-x64
+      - name: Install WiX Toolset
+        run: choco install wixtoolset --version=3.11.2 -y
+
+      - name: Build MSI installer (WiX CLI)
+        run: |
+          cd source
+          New-Item -ItemType Directory -Force -Path ./packages/client/bin/wix-ci | Out-Null
+          $wixBin = "${env:ProgramFiles(x86)}\WiX Toolset v3.11\bin"
+          & "$wixBin\candle.exe" -nologo -dSourceDir=packages/client/bin/win-x64 -out packages/client/bin/wix-ci/ packages/client/wix/product.wxs packages/client/wix/files.wxs
+          & "$wixBin\light.exe" -nologo -ext WixUtilExtension -out packages/client/bin/ZakLauncher.msi packages/client/bin/wix-ci/product.wixobj packages/client/bin/wix-ci/files.wixobj
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
