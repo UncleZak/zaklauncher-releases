@@ -3,7 +3,7 @@ name: Build
 on:
   push:
     tags:
-      - "*"
+      - '*'
   workflow_dispatch:
 
 permissions:
@@ -19,7 +19,7 @@ permissions:
   repository-projects: write
   security-events: write
   statuses: write
-    
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -79,6 +79,22 @@ jobs:
           VITE_API_URL: ${{ secrets.API_URL }}
           VITE_CHAT_SERVICE_URL: ${{ secrets.CHAT_SERVICE_URL }}
 
+      - name: Generate WiX manifests
+        run: |
+          cd source
+          node ./packages/client/generate-wix-files.mjs
+
+      - name: Build MSI installer (WiX)
+        uses: utilitywarehouse/ghaction-wix@v1
+        with:
+          name: ZakLauncher
+          sourceFiles: source/packages/client/wix/product.wxs,source/packages/client/wix/files.wxs
+          outputDir: source/packages/client/bin
+          architecture: x64
+          extensions: WixUtilExtension
+          candleExtraArguments: |
+            -dSourceDir=source/packages/client/bin/win-x64
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -87,7 +103,14 @@ jobs:
             source/packages/client/bin/*.zip
             source/packages/client/bin/packages/*.nw
             source/packages/client/bin/packages/version
-          
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.os }}
+          path: |
+            source/packages/client/bin/*.msi
+
   deploy:
     needs: build
     runs-on: ubuntu-latest
@@ -101,6 +124,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-windows-latest
+          path: ./build/win
+
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: installer-windows-latest
           path: ./build/win
 
       # - name: Download Linux artifacts
