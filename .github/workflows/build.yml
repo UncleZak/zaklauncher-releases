@@ -5,6 +5,15 @@ on:
     tags:
       - '*'
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'Что собрать (production — /var/www, rynt — /var/www-rynt, ветка rynt)'
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - rynt
 
 permissions:
   actions: write
@@ -22,10 +31,13 @@ permissions:
 
 jobs:
   build:
+    if: github.event_name == 'push' || github.event.inputs.target == 'production'
     runs-on: ${{ matrix.os }}
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       NODE_NO_WARNINGS: 1
+      ARTIFACT_PREFIX: build
+      INSTALLER_PREFIX: installer
     strategy:
       matrix:
         os: [windows-latest]
@@ -33,7 +45,7 @@ jobs:
 
     steps:
       - name: Checkout GitLab repo
-        run: git clone https://oauth2:${{ secrets.GH_ZL_TOKEN }}@gitlab.com/zaklauncher/launcher.git source
+        run: git clone --depth 1 https://oauth2:${{ secrets.GH_ZL_TOKEN }}@gitlab.com/zaklauncher/launcher.git source
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
@@ -108,7 +120,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-${{ matrix.os }}
+          name: ${{ env.ARTIFACT_PREFIX }}-${{ matrix.os }}
           path: |
             source/packages/client/bin/*.zip
             source/packages/client/bin/packages/*.nw
@@ -117,42 +129,136 @@ jobs:
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: installer-${{ matrix.os }}
+          name: ${{ env.INSTALLER_PREFIX }}-${{ matrix.os }}
+          path: |
+            source/packages/client/bin/*.msi
+
+  build-rynt:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'rynt'
+    runs-on: ${{ matrix.os }}
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      NODE_NO_WARNINGS: 1
+      GIT_BRANCH: rynt
+      ARTIFACT_PREFIX: build-rynt
+      INSTALLER_PREFIX: installer-rynt
+    strategy:
+      matrix:
+        os: [windows-latest]
+
+    steps:
+      - name: Checkout GitLab repo (branch rynt)
+        run: git clone -b ${{ env.GIT_BRANCH }} --depth 1 https://oauth2:${{ secrets.GH_ZL_TOKEN }}@gitlab.com/zaklauncher/launcher.git source
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 24
+
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Cache pnpm store
+        uses: actions/cache@v3
+        with:
+          path: ~/.pnpm-store
+          key: pnpm-store-rynt-${{ runner.os }}-${{ hashFiles('source/packages/client/pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-rynt-${{ runner.os }}-
+
+      - name: Cache client cache
+        uses: actions/cache@v3
+        with:
+          path: source/packages/client/cache
+          key: client-cache-rynt-${{ runner.os }}-${{ hashFiles('source/packages/client/pnpm-lock.yaml') }}
+          restore-keys: |
+            client-cache-rynt-${{ runner.os }}-
+
+      - name: Install dependencies (without postinstall)
+        run: |
+          cd source
+          pnpm install --ignore-scripts --store ~/.pnpm-store
+      - name: Install dependncies for package
+        run: |
+          cd source/packages/client/public
+          npm install
+      - name: Build client
+        run: |
+          cd source
+          pnpm --filter ./packages/client build
+        env:
+          VITE_CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
+          VITE_CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          VITE_CLOUDINARY_UPLOAD_PRESET: ${{ secrets.CLOUDINARY_UPLOAD_PRESET }}
+          # Rynt-стенд (порты 4xxx); задайте в GitHub Secrets или продублируйте API_URL/CHAT_SERVICE_URL
+          VITE_API_URL: ${{ secrets.API_URL_RYNT || secrets.API_URL }}
+          VITE_CHAT_SERVICE_URL: ${{ secrets.CHAT_SERVICE_URL_RYNT || secrets.CHAT_SERVICE_URL }}
+
+      - name: Generate WiX manifests
+        run: |
+          cd source
+          node ./packages/client/generate-wix-files.mjs
+
+      - name: Ensure WiX Toolset
+        shell: powershell
+        run: |
+          if (Get-Command candle.exe -ErrorAction SilentlyContinue) {
+            Write-Host "WiX already available in PATH"
+            exit 0
+          }
+
+          choco install wixtoolset -y --no-progress
+
+      - name: Build MSI installer (WiX CLI)
+        run: |
+          cd source
+          New-Item -ItemType Directory -Force -Path ./packages/client/bin/wix-ci | Out-Null
+          $candle = (Get-Command candle.exe -ErrorAction Stop).Source
+          $light = (Get-Command light.exe -ErrorAction Stop).Source
+          & "$candle" -nologo -dSourceDir=packages/client/bin/win-x64 -out packages/client/bin/wix-ci/ packages/client/wix/product.wxs packages/client/wix/files.wxs
+          & "$light" -nologo -sice:ICE91 -ext WixUtilExtension -out packages/client/bin/ZakLauncher.msi packages/client/bin/wix-ci/product.wixobj packages/client/bin/wix-ci/files.wixobj
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_PREFIX }}-${{ matrix.os }}
+          path: |
+            source/packages/client/bin/*.zip
+            source/packages/client/bin/packages/*.nw
+            source/packages/client/bin/packages/version
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.INSTALLER_PREFIX }}-${{ matrix.os }}
           path: |
             source/packages/client/bin/*.msi
 
   deploy:
     needs: build
+    if: github.event_name == 'push' || github.event.inputs.target == 'production'
     runs-on: ubuntu-latest
+    env:
+      DEPLOY_ROOT: /var/www
+      BUILD_ARTIFACT: build-windows-latest
+      INSTALLER_ARTIFACT: installer-windows-latest
 
     steps:
       - name: Checkout
-        run: echo "Ready to deploy"
+        run: echo "Ready to deploy (production → ${{ env.DEPLOY_ROOT }})"
 
-      # Скачать артефакты всех OS
       - name: Download Windows artifacts
         uses: actions/download-artifact@v4
         with:
-          name: build-windows-latest
+          name: ${{ env.BUILD_ARTIFACT }}
           path: ./build/win
 
       - name: Download Windows installer
         uses: actions/download-artifact@v4
         with:
-          name: installer-windows-latest
+          name: ${{ env.INSTALLER_ARTIFACT }}
           path: ./build/win
-
-      # - name: Download Linux artifacts
-      #   uses: actions/download-artifact@v4
-      #   with:
-      #     name: build-ubuntu-latest
-      #     path: ./build/linux
-
-      # - name: Download macOS artifacts
-      #   uses: actions/download-artifact@v4
-      #   with:
-      #     name: build-macos-latest
-      #     path: ./build/osx
 
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
@@ -166,10 +272,56 @@ jobs:
 
       - name: Deploy all artifacts to server
         run: |
-          rsync -avz ./build/ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/var/www/latest_tmp/
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+          rsync -avz ./build/ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ env.DEPLOY_ROOT }}/latest_tmp/
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << EOF
             set -e
-            cd /var/www
+            cd ${{ env.DEPLOY_ROOT }}
+            rm -rf latest || true
+            mv latest_tmp latest || true
+          EOF
+
+  deploy-rynt:
+    needs: build-rynt
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'rynt'
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_ROOT: /var/www-rynt
+      BUILD_ARTIFACT: build-rynt-windows-latest
+      INSTALLER_ARTIFACT: installer-rynt-windows-latest
+
+    steps:
+      - name: Checkout
+        run: echo "Ready to deploy (rynt → ${{ env.DEPLOY_ROOT }})"
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BUILD_ARTIFACT }}
+          path: ./build/win
+
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.INSTALLER_ARTIFACT }}
+          path: ./build/win
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add server to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy all artifacts to server (rynt stand)
+        run: |
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "mkdir -p ${{ env.DEPLOY_ROOT }}"
+          rsync -avz ./build/ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ env.DEPLOY_ROOT }}/latest_tmp/
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << EOF
+            set -e
+            cd ${{ env.DEPLOY_ROOT }}
             rm -rf latest || true
             mv latest_tmp latest || true
           EOF
