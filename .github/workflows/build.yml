@@ -194,6 +194,8 @@ jobs:
           # Rynt-стенд (порты 4xxx); задайте в GitHub Secrets или продублируйте API_URL/CHAT_SERVICE_URL
           VITE_API_URL: ${{ secrets.API_URL_RYNT || secrets.API_URL }}
           VITE_CHAT_SERVICE_URL: ${{ secrets.CHAT_SERVICE_URL_RYNT || secrets.CHAT_SERVICE_URL }}
+          VITE_NOTIFY_SERVICE_URL: ${{ secrets.NOTIFY_SERVICE_URL }}
+          VITE_EXTENSION_MARKETPLACE_URL: ${{ secrets.EXTENSION_MARKETPLACE_URL }}
 
       - name: Generate WiX manifests
         run: |
