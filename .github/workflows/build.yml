@@ -196,6 +196,10 @@ jobs:
           VITE_CHAT_SERVICE_URL: ${{ secrets.CHAT_SERVICE_URL_RYNT || secrets.CHAT_SERVICE_URL }}
           VITE_NOTIFY_SERVICE_URL: ${{ secrets.NOTIFY_SERVICE_URL }}
           VITE_EXTENSION_MARKETPLACE_URL: ${{ secrets.EXTENSION_MARKETPLACE_URL }}
+          VITE_PLAY_TUNNEL_HOST: ${{ secrets.PLAY_TUNNEL_HOST }}
+          VITE_PLAY_TUNNEL_PORT: ${{ secrets.PLAY_TUNNEL_PORT }}
+          VITE_PLAY_PUBLIC_PORT: ${{ secrets.PLAY_PUBLIC_PORT }}
+          VITE_PLAY_DOMAIN: ${{ secrets.PLAY_DOMAIN }}
 
       - name: Generate WiX manifests
         run: |
